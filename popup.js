@@ -1,5 +1,11 @@
 import { getTabLabel, matchesDomainList } from "./bg/utils.js";
 
+try {
+  chrome.runtime.connect({ name: "keepalive" });
+} catch {
+  // Service worker may not be ready yet.
+}
+
 const summaryEl = document.getElementById("summary");
 const statusEl = document.getElementById("status");
 const sweepNow = document.getElementById("sweepNow");
@@ -14,7 +20,6 @@ function showStatus(message, isError = false) {
 }
 
 function formatCountdown(ms) {
-  if (ms <= 0) return "closing soon";
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   if (totalSeconds >= 60) {
     const minutes = Math.floor(totalSeconds / 60);
@@ -214,6 +219,13 @@ openOptions.addEventListener("click", () => {
 
 openSaved.addEventListener("click", async () => {
   await chrome.tabs.create({ url: chrome.runtime.getURL("saved.html") });
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.warnedTabs || changes.tabOpenedAt) {
+    loadWarnedTabs().catch(() => {});
+    loadSummary().catch(() => {});
+  }
 });
 
 Promise.all([loadSummary(), loadWarnedTabs()]).catch((error) =>

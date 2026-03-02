@@ -73,7 +73,7 @@ export async function evaluateTabs() {
     const isException = matchesDomainList(tab.url, exceptionDomains);
 
     if (ageMs >= warningMs) {
-      warningCount += 1;
+      if (!isException) warningCount += 1;
       if (!warnedTabs[key]) {
         warnedTabs[key] = now;
         changedWarned = true;
