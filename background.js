@@ -32,9 +32,10 @@ async function refreshBadgeCountdown() {
     const key = String(tab.id);
     if (!warnedTabs[key]) continue;
 
-    warningCount += 1;
     const isException = matchesDomainList(tab.url, exceptionDomains);
     if (isException) continue;
+
+    warningCount += 1;
 
     const openedAt = tabOpenedAt[key];
     if (!openedAt) continue;
@@ -60,7 +61,7 @@ async function manageCountdownAlarm(soonestCloseMs) {
   }
 }
 
-async function initializeState() {
+async function initializeStorage() {
   const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]);
 
   if (!data.tabOpenedAt) {
@@ -70,6 +71,13 @@ async function initializeState() {
   if (!data.warnedTabs) {
     await setStorage({ [STORAGE_KEYS.warnedTabs]: {} });
   }
+}
+
+async function initializeState() {
+  await initializeStorage();
+
+  const settings = await getSettings();
+  if (!settings.setupComplete) return;
 
   await bootstrapExistingTabs();
   await scheduleAlarm();
@@ -78,7 +86,22 @@ async function initializeState() {
   await manageCountdownAlarm(soonestCloseMs);
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason === "install") {
+    await initializeStorage();
+    await chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") });
+    return;
+  }
+
+  if (details.reason === "update") {
+    const data = await getStorage(STORAGE_KEYS.settings);
+    const existing = data.settings || {};
+    if (existing.setupComplete !== true) {
+      existing.setupComplete = true;
+      await setStorage({ [STORAGE_KEYS.settings]: existing });
+    }
+  }
+
   await initializeState();
 });
 
@@ -129,20 +152,64 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt,
       [STORAGE_KEYS.warnedTabs]: warnedTabs,
     });
+    const soonestCloseMs = await refreshBadgeCountdown();
+    await manageCountdownAlarm(soonestCloseMs);
   }
 });
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await updateActiveTabIndicator(activeInfo.tabId);
+  await refreshBadgeCountdown();
+});
+
+let badgeTickInterval = null;
+let activePorts = 0;
+
+function startBadgeTick() {
+  if (badgeTickInterval) return;
+  badgeTickInterval = setInterval(async () => {
+    const soonestCloseMs = await refreshBadgeCountdown();
+    if (soonestCloseMs !== null && soonestCloseMs <= 0) {
+      await evaluateTabs();
+      const updated = await refreshBadgeCountdown();
+      await manageCountdownAlarm(updated);
+    }
+  }, 1000);
+}
+
+function stopBadgeTick() {
+  if (badgeTickInterval) {
+    clearInterval(badgeTickInterval);
+    badgeTickInterval = null;
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "keepalive") return;
+  activePorts += 1;
+  startBadgeTick();
+
+  port.onDisconnect.addListener(() => {
+    activePorts -= 1;
+    if (activePorts <= 0) {
+      activePorts = 0;
+      stopBadgeTick();
+    }
+  });
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "tab-sweeper-countdown") {
     const soonestCloseMs = await refreshBadgeCountdown();
-    await manageCountdownAlarm(soonestCloseMs);
+    if (soonestCloseMs !== null && soonestCloseMs <= 0) {
+      await evaluateTabs();
+    }
+    await manageCountdownAlarm(await refreshBadgeCountdown());
     return;
   }
   if (alarm.name !== "tab-sweeper-check") return;
+  const settings = await getSettings();
+  if (!settings.setupComplete) return;
   await evaluateTabs();
   const soonestCloseMs = await refreshBadgeCountdown();
   await manageCountdownAlarm(soonestCloseMs);
@@ -150,6 +217,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.idle.onStateChanged.addListener(async (newState) => {
   if (newState === "active") {
+    const settings = await getSettings();
+    if (!settings.setupComplete) return;
     await evaluateTabs();
     const soonestCloseMs = await refreshBadgeCountdown();
     await manageCountdownAlarm(soonestCloseMs);
@@ -158,7 +227,11 @@ chrome.idle.onStateChanged.addListener(async (newState) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "runSweepNow") {
-    evaluateTabs()
+    getSettings()
+      .then((settings) => {
+        if (!settings.setupComplete) throw new Error("Setup not completed yet.");
+        return evaluateTabs();
+      })
       .then(() => refreshBadgeCountdown())
       .then((ms) => manageCountdownAlarm(ms))
       .then(() => sendResponse({ ok: true }))

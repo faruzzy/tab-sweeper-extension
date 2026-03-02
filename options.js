@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   warningDuration: { days: 0, hours: 0, minutes: 1 },
   closeDuration: { days: 0, hours: 0, minutes: 5 },
   exceptionDomains: [],
+  setupComplete: false,
 };
 
 const warningDaysEl = document.getElementById("warningDays");
@@ -15,7 +16,7 @@ const closeDaysEl = document.getElementById("closeDays");
 const closeHoursEl = document.getElementById("closeHours");
 const closeMinutesEl = document.getElementById("closeMinutes");
 
-const sweepSecondsEl = document.getElementById("sweepSeconds");
+const sweepDisplayEl = document.getElementById("sweepDisplay");
 const domainForm = document.getElementById("domainForm");
 const domainInput = document.getElementById("domainInput");
 const domainList = document.getElementById("domainList");
@@ -26,7 +27,9 @@ const statusEl = document.getElementById("status");
 let exceptionDomains = [];
 
 function normalizeDomain(value) {
-  let domain = String(value || "").toLowerCase().trim();
+  let domain = String(value || "")
+    .toLowerCase()
+    .trim();
   domain = domain.replace(/^https?:\/\//, "");
   domain = domain.replace(/^www\./, "");
   domain = domain.split("/")[0];
@@ -57,42 +60,54 @@ function minutesToDuration(totalMinutes) {
   return { days, hours, minutes };
 }
 
+function computeSweepInterval(closeMinutes) {
+  const raw = Math.floor((closeMinutes * 60) / 20);
+  return Math.max(30, Math.min(300, raw));
+}
+
 function normalizeSettings(rawSettings = {}) {
   const warningMinutes = Number(
     durationToMinutes(rawSettings.warningDuration) ??
       rawSettings.warningMinutes ??
-      (Number.isFinite(Number(rawSettings.warningHours)) ? Number(rawSettings.warningHours) * 60 : undefined) ??
-      DEFAULT_SETTINGS.warningMinutes
+      (Number.isFinite(Number(rawSettings.warningHours))
+        ? Number(rawSettings.warningHours) * 60
+        : undefined) ??
+      DEFAULT_SETTINGS.warningMinutes,
   );
 
   const closeMinutes = Number(
     durationToMinutes(rawSettings.closeDuration) ??
       rawSettings.closeMinutes ??
-      (Number.isFinite(Number(rawSettings.closeHours)) ? Number(rawSettings.closeHours) * 60 : undefined) ??
-      DEFAULT_SETTINGS.closeMinutes
+      (Number.isFinite(Number(rawSettings.closeHours))
+        ? Number(rawSettings.closeHours) * 60
+        : undefined) ??
+      DEFAULT_SETTINGS.closeMinutes,
   );
 
-  const sweepSeconds = Number(
-    rawSettings.sweepSeconds ??
-      (Number.isFinite(Number(rawSettings.alarmMinutes)) ? Number(rawSettings.alarmMinutes) * 60 : undefined) ??
-      DEFAULT_SETTINGS.sweepSeconds
-  );
-
-  const legacyTracked = Array.isArray(rawSettings.trackedDomains) ? rawSettings.trackedDomains : [];
+  const legacyTracked = Array.isArray(rawSettings.trackedDomains)
+    ? rawSettings.trackedDomains
+    : [];
   const exceptionDomains = Array.isArray(rawSettings.exceptionDomains)
     ? rawSettings.exceptionDomains
     : legacyTracked;
 
-  const normalizedWarningMinutes = Math.max(1, warningMinutes || DEFAULT_SETTINGS.warningMinutes);
-  const normalizedCloseMinutes = Math.max(1, closeMinutes || DEFAULT_SETTINGS.closeMinutes);
+  const normalizedWarningMinutes = Math.max(
+    1,
+    warningMinutes || DEFAULT_SETTINGS.warningMinutes,
+  );
+  const normalizedCloseMinutes = Math.max(
+    1,
+    closeMinutes || DEFAULT_SETTINGS.closeMinutes,
+  );
 
   return {
     warningMinutes: normalizedWarningMinutes,
     closeMinutes: normalizedCloseMinutes,
     warningDuration: minutesToDuration(normalizedWarningMinutes),
     closeDuration: minutesToDuration(normalizedCloseMinutes),
-    sweepSeconds: Math.max(30, sweepSeconds || DEFAULT_SETTINGS.sweepSeconds),
+    sweepSeconds: computeSweepInterval(normalizedCloseMinutes),
     exceptionDomains: exceptionDomains.map(normalizeDomain).filter(Boolean),
+    setupComplete: rawSettings.setupComplete === true,
   };
 }
 
@@ -110,12 +125,24 @@ function setDurationInputs(daysEl, hoursEl, minutesEl, duration) {
   minutesEl.value = String(duration.minutes);
 }
 
+function updateSweepDisplay() {
+  const closeDuration = readDurationInputs(
+    closeDaysEl,
+    closeHoursEl,
+    closeMinutesEl,
+    DEFAULT_SETTINGS.closeMinutes,
+  );
+  const closeMin = durationToMinutes(closeDuration);
+  sweepDisplayEl.textContent = String(computeSweepInterval(closeMin));
+}
+
 function renderDomains() {
   domainList.innerHTML = "";
 
   if (exceptionDomains.length === 0) {
     const li = document.createElement("li");
-    li.textContent = "No exception domains yet. Tabs from all domains are eligible for auto-close.";
+    li.textContent =
+      "No exception domains yet. Tabs from all domains are eligible for auto-close.";
     li.className = "muted";
     domainList.appendChild(li);
     return;
@@ -150,10 +177,20 @@ async function loadSettings() {
   const result = await chrome.storage.local.get("settings");
   const settings = normalizeSettings(result.settings || {});
 
-  setDurationInputs(warningDaysEl, warningHoursEl, warningMinutesEl, settings.warningDuration);
-  setDurationInputs(closeDaysEl, closeHoursEl, closeMinutesEl, settings.closeDuration);
+  setDurationInputs(
+    warningDaysEl,
+    warningHoursEl,
+    warningMinutesEl,
+    settings.warningDuration,
+  );
+  setDurationInputs(
+    closeDaysEl,
+    closeHoursEl,
+    closeMinutesEl,
+    settings.closeDuration,
+  );
 
-  sweepSecondsEl.value = String(settings.sweepSeconds);
+  updateSweepDisplay();
   exceptionDomains = settings.exceptionDomains;
 
   renderDomains();
@@ -164,30 +201,39 @@ async function saveSettings() {
     warningDaysEl,
     warningHoursEl,
     warningMinutesEl,
-    DEFAULT_SETTINGS.warningMinutes
+    DEFAULT_SETTINGS.warningMinutes,
   );
 
   const closeDuration = readDurationInputs(
     closeDaysEl,
     closeHoursEl,
     closeMinutesEl,
-    DEFAULT_SETTINGS.closeMinutes
+    DEFAULT_SETTINGS.closeMinutes,
   );
+
+  const closeMinutes = durationToMinutes(closeDuration);
 
   const settings = {
     warningDuration,
     closeDuration,
     warningMinutes: durationToMinutes(warningDuration),
-    closeMinutes: durationToMinutes(closeDuration),
-    sweepSeconds: Math.max(30, Number(sweepSecondsEl.value) || DEFAULT_SETTINGS.sweepSeconds),
-    exceptionDomains: [...new Set(exceptionDomains.map(normalizeDomain).filter(Boolean))],
+    closeMinutes,
+    sweepSeconds: computeSweepInterval(closeMinutes),
+    exceptionDomains: [
+      ...new Set(exceptionDomains.map(normalizeDomain).filter(Boolean)),
+    ],
+    setupComplete: true,
   };
 
   await chrome.storage.local.set({ settings });
 
-  const response = await chrome.runtime.sendMessage({ type: "settingsUpdated" });
+  const response = await chrome.runtime.sendMessage({
+    type: "settingsUpdated",
+  });
   if (!response?.ok) {
-    throw new Error(response?.error || "Failed to apply settings in background worker.");
+    throw new Error(
+      response?.error || "Failed to apply settings in background worker.",
+    );
   }
 
   showStatus("Settings saved.");
@@ -231,6 +277,10 @@ sweepButton.addEventListener("click", async () => {
     showStatus(String(error), true);
   }
 });
+
+closeDaysEl.addEventListener("input", updateSweepDisplay);
+closeHoursEl.addEventListener("input", updateSweepDisplay);
+closeMinutesEl.addEventListener("input", updateSweepDisplay);
 
 loadSettings().catch((error) => {
   showStatus(`Failed to load settings: ${String(error)}`, true);

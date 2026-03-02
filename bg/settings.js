@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, STORAGE_KEYS, getStorage, setStorage } from "./storage.js";
+import { DEFAULT_SETTINGS, STORAGE_KEYS, getStorage, setStorage, computeSweepInterval } from "./storage.js";
 
 function normalizeSettings(rawSettings = {}) {
   const durationToMinutes = (duration) => {
@@ -32,12 +32,6 @@ function normalizeSettings(rawSettings = {}) {
       DEFAULT_SETTINGS.closeMinutes
   );
 
-  const sweepSeconds = Number(
-    rawSettings.sweepSeconds ??
-      (Number.isFinite(Number(rawSettings.alarmMinutes)) ? Number(rawSettings.alarmMinutes) * 60 : undefined) ??
-      DEFAULT_SETTINGS.sweepSeconds
-  );
-
   const legacyTracked = Array.isArray(rawSettings.trackedDomains) ? rawSettings.trackedDomains : [];
   const exceptionDomains = Array.isArray(rawSettings.exceptionDomains)
     ? rawSettings.exceptionDomains
@@ -45,14 +39,16 @@ function normalizeSettings(rawSettings = {}) {
 
   const normalizedWarningMinutes = Math.max(1, warningMinutes || DEFAULT_SETTINGS.warningMinutes);
   const normalizedCloseMinutes = Math.max(1, closeMinutes || DEFAULT_SETTINGS.closeMinutes);
+  const setupComplete = rawSettings.setupComplete === true;
 
   return {
     warningMinutes: normalizedWarningMinutes,
     closeMinutes: normalizedCloseMinutes,
     warningDuration: minutesToDuration(normalizedWarningMinutes),
     closeDuration: minutesToDuration(normalizedCloseMinutes),
-    sweepSeconds: Math.max(30, sweepSeconds || DEFAULT_SETTINGS.sweepSeconds),
+    sweepSeconds: computeSweepInterval(normalizedCloseMinutes),
     exceptionDomains,
+    setupComplete,
   };
 }
 

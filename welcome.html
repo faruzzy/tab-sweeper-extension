@@ -3,19 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tab Sweeper Settings</title>
+    <title>Welcome to Tab Sweeper</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="container">
-      <h1>Tab Sweeper Settings</h1>
-      <p class="muted">Warn on old tabs, auto-close old tabs, and keep exception domains that should never be closed.</p>
+      <h1>Welcome to Tab Sweeper</h1>
+      <p class="muted">
+        Tab Sweeper watches for old tabs and auto-closes them to keep your browser tidy.
+        Choose when to warn and when to close tabs, then click Get Started.
+      </p>
 
       <section class="card">
         <h2>Timing</h2>
 
         <div class="duration-section">
           <p class="duration-title">Warn after</p>
+          <p class="hint" style="margin-top:0;margin-bottom:8px;">
+            How long a tab can sit idle before you see a warning.
+          </p>
           <div class="duration-grid">
             <label class="duration-field">
               Days
@@ -34,6 +40,9 @@
 
         <div class="duration-section">
           <p class="duration-title">Auto-close after</p>
+          <p class="hint" style="margin-top:0;margin-bottom:8px;">
+            How long after opening before a tab is automatically closed.
+          </p>
           <div class="duration-grid">
             <label class="duration-field">
               Days
@@ -49,31 +58,15 @@
             </label>
           </div>
         </div>
-
-        <p id="sweepInfo" class="hint" style="margin-top:14px;">
-          Sweep interval: <strong id="sweepDisplay">--</strong> seconds (auto-computed from close time)
-        </p>
-      </section>
-
-      <section class="card">
-        <h2>Exception Domains (Do Not Auto-Close)</h2>
-        <form id="domainForm" class="row">
-          <input id="domainInput" type="text" placeholder="mail.google.com" required />
-          <button type="submit">Add</button>
-        </form>
-        <p class="hint">Matching is by domain and subdomain. Example: adding <code>google.com</code> also protects <code>mail.google.com</code>.</p>
-        <ul id="domainList" class="domain-list"></ul>
       </section>
 
       <section class="row">
-        <button id="saveButton">Save Settings</button>
-        <button id="sweepButton" class="secondary">Run Sweep Now</button>
-        <a href="saved.html" target="_blank" rel="noopener">Open Closed Tabs Report</a>
+        <button id="getStartedButton">Get Started</button>
       </section>
 
       <p id="status" class="status"></p>
     </main>
 
-    <script src="options.js"></script>
+    <script src="welcome.js"></script>
   </body>
 </html>
