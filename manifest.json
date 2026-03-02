@@ -6,7 +6,8 @@
   "permissions": ["tabs", "storage", "notifications", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "options_page": "options.html",
   "action": {
