@@ -1,12 +1,33 @@
 import { getTabLabel, formatAge } from "./utils.js";
+import { STORAGE_KEYS, getStorage } from "./storage.js";
 
-export async function updateBadge(warningCount) {
-  if (warningCount > 0) {
+function formatBadgeCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds >= 60) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${totalSeconds}s`;
+}
+
+export async function updateBadge(warningCount, soonestCloseMs = null) {
+  if (typeof soonestCloseMs === "number" && soonestCloseMs > 0 && soonestCloseMs <= 300000) {
+    await chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
+    await chrome.action.setBadgeText({ text: formatBadgeCountdown(soonestCloseMs) });
+  } else if (warningCount > 0) {
     await chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
     await chrome.action.setBadgeText({ text: String(Math.min(warningCount, 99)) });
   } else {
     await chrome.action.setBadgeText({ text: "" });
   }
+}
+
+export async function updateActiveTabIndicator(tabId) {
+  const data = await getStorage(STORAGE_KEYS.warnedTabs);
+  const warnedTabs = data.warnedTabs || {};
+  const color = warnedTabs[String(tabId)] ? "#e67e22" : "#c0392b";
+  await chrome.action.setBadgeBackgroundColor({ color, tabId });
 }
 
 export async function focusTabById(tabId) {

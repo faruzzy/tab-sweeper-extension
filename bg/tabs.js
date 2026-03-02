@@ -1,7 +1,7 @@
 import { STORAGE_KEYS, getStorage, setStorage } from "./storage.js";
 import { getSettings } from "./settings.js";
 import { shouldTrackUrl, matchesDomainList } from "./utils.js";
-import { updateBadge, notifyOldTabs } from "./notifications.js";
+import { updateBadge, notifyOldTabs, updateActiveTabIndicator } from "./notifications.js";
 
 export async function saveClosedTab(entry) {
   const data = await getStorage(STORAGE_KEYS.savedTabs);
@@ -51,6 +51,7 @@ export async function evaluateTabs() {
   let warningCount = 0;
   let changedOpen = false;
   let changedWarned = false;
+  let soonestCloseMs = null;
 
   const liveTabIds = new Set();
   const newWarnings = [];
@@ -69,6 +70,8 @@ export async function evaluateTabs() {
     const openedAt = tabOpenedAt[key];
     const ageMs = now - openedAt;
 
+    const isException = matchesDomainList(tab.url, exceptionDomains);
+
     if (ageMs >= warningMs) {
       warningCount += 1;
       if (!warnedTabs[key]) {
@@ -76,9 +79,15 @@ export async function evaluateTabs() {
         changedWarned = true;
         newWarnings.push({ tab, minutesOpen: ageMs / (1000 * 60) });
       }
+
+      if (!isException) {
+        const remaining = closeMs - ageMs;
+        if (remaining > 0 && (soonestCloseMs === null || remaining < soonestCloseMs)) {
+          soonestCloseMs = remaining;
+        }
+      }
     }
 
-    const isException = matchesDomainList(tab.url, exceptionDomains);
     if (ageMs >= closeMs && !isException) {
       await saveClosedTab({
         id: crypto.randomUUID(),
@@ -111,7 +120,7 @@ export async function evaluateTabs() {
     }
   }
 
-  await updateBadge(warningCount);
+  await updateBadge(warningCount, soonestCloseMs);
   await notifyOldTabs(newWarnings);
 
   const updates = {};
@@ -120,5 +129,10 @@ export async function evaluateTabs() {
 
   if (Object.keys(updates).length > 0) {
     await setStorage(updates);
+  }
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (activeTab?.id) {
+    await updateActiveTabIndicator(activeTab.id);
   }
 }
