@@ -1,6 +1,6 @@
 import { STORAGE_KEYS, getStorage, setStorage } from "./storage.js";
 import { getSettings } from "./settings.js";
-import { shouldTrackUrl, matchesDomainList } from "./utils.js";
+import { shouldTrackTab, matchesDomainList } from "./utils.js";
 import { updateBadge, notifyOldTabs, updateActiveTabIndicator } from "./notifications.js";
 
 export async function saveClosedTab(entry) {
@@ -20,7 +20,7 @@ export async function bootstrapExistingTabs() {
   let changed = false;
 
   for (const tab of tabs) {
-    if (!tab.id || !shouldTrackUrl(tab.url)) continue;
+    if (!tab.id || !shouldTrackTab(tab)) continue;
     const key = String(tab.id);
     if (!tabOpenedAt[key]) {
       tabOpenedAt[key] = now;
@@ -57,7 +57,7 @@ export async function evaluateTabs() {
   const newWarnings = [];
 
   for (const tab of tabs) {
-    if (!tab.id || !shouldTrackUrl(tab.url)) continue;
+    if (!tab.id || !shouldTrackTab(tab)) continue;
 
     const key = String(tab.id);
     liveTabIds.add(key);

@@ -1,6 +1,6 @@
 import { STORAGE_KEYS, getStorage, setStorage } from "./bg/storage.js";
 import { getSettings } from "./bg/settings.js";
-import { shouldTrackUrl, matchesDomainList } from "./bg/utils.js";
+import { shouldTrackTab, matchesDomainList } from "./bg/utils.js";
 import { focusTabById, updateActiveTabIndicator, updateBadge } from "./bg/notifications.js";
 import { bootstrapExistingTabs, evaluateTabs } from "./bg/tabs.js";
 
@@ -28,7 +28,7 @@ async function refreshBadgeCountdown() {
   let soonestCloseMs = null;
 
   for (const tab of tabs) {
-    if (!tab.id || !shouldTrackUrl(tab.url)) continue;
+    if (!tab.id || !shouldTrackTab(tab)) continue;
     const key = String(tab.id);
     if (!warnedTabs[key]) continue;
 
@@ -87,7 +87,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.tabs.onCreated.addListener(async (tab) => {
-  if (!tab.id || !shouldTrackUrl(tab.url)) return;
+  if (!tab.id || !shouldTrackTab(tab)) return;
 
   const data = await getStorage(STORAGE_KEYS.tabOpenedAt);
   const tabOpenedAt = data.tabOpenedAt || {};
@@ -96,7 +96,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (!shouldTrackUrl(tab?.url || changeInfo.url)) return;
+  if (!shouldTrackTab(tab)) return;
 
   const data = await getStorage(STORAGE_KEYS.tabOpenedAt);
   const tabOpenedAt = data.tabOpenedAt || {};

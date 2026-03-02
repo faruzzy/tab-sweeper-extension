@@ -12,6 +12,12 @@ export function shouldTrackUrl(urlString) {
   return urlString.startsWith("http://") || urlString.startsWith("https://");
 }
 
+export function shouldTrackTab(tab) {
+  if (!tab) return false;
+  if (tab.groupId !== undefined && tab.groupId !== -1) return false;
+  return shouldTrackUrl(tab.url);
+}
+
 export function matchesDomainList(urlString, domains) {
   const host = normalizeHostname(urlString);
   if (!host) return false;

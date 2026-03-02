@@ -104,6 +104,7 @@ async function loadWarnedTabs() {
     const openedAt = tabOpenedAt[key] || now;
     const closeAt = openedAt + closeMinutes * 60000;
     const remaining = closeAt - now;
+    if (tab.groupId !== undefined && tab.groupId !== -1) continue;
     const isException = matchesDomainList(tab.url || "", exceptionDomains);
     if (isException) continue;
 
