@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tab Sweeper Settings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Tab Sweeper Settings</h1>
+      <p class="muted">Warn on old tabs, auto-close old tabs, and keep exception domains that should never be closed.</p>
+
+      <section class="card">
+        <h2>Timing</h2>
+
+        <div class="duration-section">
+          <p class="duration-title">Warn after</p>
+          <div class="duration-grid">
+            <label class="duration-field">
+              Days
+              <input id="warningDays" type="number" min="0" step="1" />
+            </label>
+            <label class="duration-field">
+              Hours
+              <input id="warningHours" type="number" min="0" step="1" />
+            </label>
+            <label class="duration-field">
+              Minutes
+              <input id="warningMinutes" type="number" min="0" step="1" />
+            </label>
+          </div>
+        </div>
+
+        <div class="duration-section">
+          <p class="duration-title">Auto-close after</p>
+          <div class="duration-grid">
+            <label class="duration-field">
+              Days
+              <input id="closeDays" type="number" min="0" step="1" />
+            </label>
+            <label class="duration-field">
+              Hours
+              <input id="closeHours" type="number" min="0" step="1" />
+            </label>
+            <label class="duration-field">
+              Minutes
+              <input id="closeMinutes" type="number" min="0" step="1" />
+            </label>
+          </div>
+        </div>
+
+        <label>
+          Sweep interval (seconds)
+          <input id="sweepSeconds" type="number" min="30" step="1" />
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>Exception Domains (Do Not Auto-Close)</h2>
+        <form id="domainForm" class="row">
+          <input id="domainInput" type="text" placeholder="mail.google.com" required />
+          <button type="submit">Add</button>
+        </form>
+        <p class="hint">Matching is by domain and subdomain. Example: adding <code>google.com</code> also protects <code>mail.google.com</code>.</p>
+        <ul id="domainList" class="domain-list"></ul>
+      </section>
+
+      <section class="row">
+        <button id="saveButton">Save Settings</button>
+        <button id="sweepButton" class="secondary">Run Sweep Now</button>
+        <a href="saved.html" target="_blank" rel="noopener">Open Closed Tabs Report</a>
+      </section>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>
