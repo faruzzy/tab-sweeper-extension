@@ -1,0 +1,24 @@
+{
+  "name": "tab-sweeper-extension",
+  "version": "1.0.0",
+  "description": "A Manifest V3 extension to help reduce tab overload.",
+  "main": "background.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/faruzzy/tab-sweeper-extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/faruzzy/tab-sweeper-extension/issues"
+  },
+  "homepage": "https://github.com/faruzzy/tab-sweeper-extension#readme",
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  }
+}
