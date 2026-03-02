@@ -13,7 +13,7 @@ A Manifest V3 extension to help reduce tab overload.
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select this folder:
-   - `/Users/faruzzy/github/tab-sweeper-extension`
+   - Select the folder where you cloned/downloaded this repository
 
 ## Configure
 1. Open extension **Settings** (Options page).
