@@ -3,7 +3,7 @@
   "name": "Tab Sweeper",
   "version": "1.0.0",
   "description": "Warn about old tabs, auto-close distraction domains, and keep a saved tab list.",
-  "permissions": ["tabs", "storage", "notifications", "alarms"],
+  "permissions": ["tabs", "storage", "notifications", "alarms", "idle"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js",

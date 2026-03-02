@@ -10,6 +10,10 @@
     <main class="container popup">
       <h1>Tab Sweeper</h1>
       <p id="summary" class="muted">Loading...</p>
+      <section id="warnedSection" class="warned-section" hidden>
+        <h2>Warned Tabs</h2>
+        <ul id="warnedList" class="warned-list"></ul>
+      </section>
       <section class="row">
         <button id="sweepNow">Run Sweep</button>
         <button id="openOptions" class="secondary">Settings</button>
@@ -19,6 +23,6 @@
       </section>
       <p id="status" class="status"></p>
     </main>
-    <script src="popup.js"></script>
+    <script src="popup.js" type="module"></script>
   </body>
 </html>
