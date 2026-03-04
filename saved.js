@@ -61,7 +61,9 @@ function createTabItem(item) {
 
   const title = document.createElement("a");
   title.href = item.url;
-  title.textContent = item.title || item.url;
+  const fullTitle = item.title || item.url;
+  title.textContent = fullTitle;
+  title.title = fullTitle;
   title.target = "_blank";
   title.rel = "noopener";
 
@@ -71,7 +73,7 @@ function createTabItem(item) {
   meta.append(title, detail);
 
   const actions = document.createElement("div");
-  actions.className = "row";
+  actions.className = "saved-actions";
 
   const reopenBtn = document.createElement("button");
   reopenBtn.textContent = "Reopen";

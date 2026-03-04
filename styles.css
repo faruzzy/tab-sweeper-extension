@@ -149,12 +149,15 @@ button.danger:hover {
 
 .saved-item {
   align-items: flex-start;
+  flex-wrap: nowrap;
 }
 
 .saved-meta {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .saved-meta a {
@@ -164,6 +167,11 @@ button.danger:hover {
   color: #2443ad;
   font-weight: 700;
   justify-content: flex-start;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .saved-meta a:hover {
@@ -175,14 +183,26 @@ button.danger:hover {
   color: var(--muted);
 }
 
+.saved-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
 @media (max-width: 600px) {
   .container {
     padding: 14px;
   }
 
-  .domain-item,
-  .saved-item {
+  .domain-item {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .saved-item {
+    flex-direction: row;
     align-items: flex-start;
   }
 }
