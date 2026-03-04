@@ -111,3 +111,86 @@ export async function notifyOldTabs(newWarnings) {
     // Ignore notification delivery failures for batch notifications.
   }
 }
+
+export async function notifyWakeWarningSummary(warnedTabs) {
+  if (!Array.isArray(warnedTabs) || warnedTabs.length === 0) return;
+
+  if (warnedTabs.length === 1) {
+    const item = warnedTabs[0];
+    if (!item?.tab?.id) return;
+
+    const { label, hostname } = getTabLabel(item.tab);
+    const where = hostname ? ` (${hostname})` : "";
+    const age = formatAge(item.minutesOpen);
+
+    await chrome.notifications.create(`old-tab-${item.tab.id}-${Date.now()}`, {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      title: "Tab Sweeper: warning while you were away",
+      message: `${label}${where} is still open after ${age}. Click to jump to this tab.`,
+      priority: 1,
+    });
+    return;
+  }
+
+  const first = warnedTabs[0];
+  if (!first?.tab?.id) return;
+
+  const preview = warnedTabs
+    .slice(0, 3)
+    .map((item) => {
+      const { label } = getTabLabel(item.tab);
+      return label;
+    })
+    .join(" | ");
+
+  const extra = warnedTabs.length > 3 ? ` +${warnedTabs.length - 3} more` : "";
+  const message = `${warnedTabs.length} tabs are still over your warning limit. ${preview}${extra}. Click to open one.`;
+
+  await chrome.notifications.create(`old-tabs-batch-${first.tab.id}-${Date.now()}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+    title: "Tab Sweeper: warnings while away",
+    message,
+    priority: 1,
+  });
+}
+
+export async function notifyWakeAutoClosedSummary(autoClosedTabs) {
+  if (!Array.isArray(autoClosedTabs) || autoClosedTabs.length === 0) return;
+
+  if (autoClosedTabs.length === 1) {
+    const item = autoClosedTabs[0];
+    const { label, hostname } = getTabLabel(item.tab || {});
+    const where = hostname ? ` (${hostname})` : "";
+    const age = formatAge(item.minutesOpen);
+
+    await chrome.notifications.create(`auto-closed-wake-${Date.now()}`, {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      title: "Tab Sweeper: tab auto-closed",
+      message: `${label}${where} was auto-closed after ${age} while you were away.`,
+      priority: 1,
+    });
+    return;
+  }
+
+  const preview = autoClosedTabs
+    .slice(0, 3)
+    .map((item) => {
+      const { label } = getTabLabel(item.tab || {});
+      return label;
+    })
+    .join(" | ");
+
+  const extra = autoClosedTabs.length > 3 ? ` +${autoClosedTabs.length - 3} more` : "";
+  const message = `${autoClosedTabs.length} tabs were auto-closed while you were away. ${preview}${extra}.`;
+
+  await chrome.notifications.create(`auto-closed-wake-${Date.now()}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+    title: "Tab Sweeper: tabs auto-closed",
+    message,
+    priority: 1,
+  });
+}

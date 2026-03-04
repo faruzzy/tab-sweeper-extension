@@ -33,7 +33,8 @@ export async function bootstrapExistingTabs() {
   }
 }
 
-export async function evaluateTabs() {
+export async function evaluateTabs(options = {}) {
+  const notifyWarnings = options.notifyWarnings !== false;
   const [settings, storage, tabs] = await Promise.all([
     getSettings(),
     getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]),
@@ -55,6 +56,8 @@ export async function evaluateTabs() {
 
   const liveTabIds = new Set();
   const newWarnings = [];
+  const warnedOpenTabs = [];
+  const autoClosedTabs = [];
 
   for (const tab of tabs) {
     if (!tab.id || !shouldTrackTab(tab)) continue;
@@ -72,8 +75,37 @@ export async function evaluateTabs() {
 
     const isException = matchesDomainList(tab.url, exceptionDomains);
 
+    if (ageMs >= closeMs && !isException) {
+      const entry = {
+        id: crypto.randomUUID(),
+        url: tab.url,
+        title: tab.title || tab.url,
+        openedAt,
+        closedAt: now,
+        reason: "time-limit-non-exception-domain",
+      };
+
+      await saveClosedTab(entry);
+
+      autoClosedTabs.push({
+        tab: { title: entry.title, url: entry.url },
+        minutesOpen: ageMs / (1000 * 60),
+      });
+
+      await chrome.tabs.remove(tab.id);
+      delete tabOpenedAt[key];
+      delete warnedTabs[key];
+      changedOpen = true;
+      changedWarned = true;
+      continue;
+    }
+
     if (ageMs >= warningMs) {
-      if (!isException) warningCount += 1;
+      if (!isException) {
+        warningCount += 1;
+        warnedOpenTabs.push({ tab, minutesOpen: ageMs / (1000 * 60) });
+      }
+
       if (!warnedTabs[key]) {
         warnedTabs[key] = now;
         changedWarned = true;
@@ -86,23 +118,6 @@ export async function evaluateTabs() {
           soonestCloseMs = remaining;
         }
       }
-    }
-
-    if (ageMs >= closeMs && !isException) {
-      await saveClosedTab({
-        id: crypto.randomUUID(),
-        url: tab.url,
-        title: tab.title || tab.url,
-        openedAt,
-        closedAt: now,
-        reason: "time-limit-non-exception-domain",
-      });
-
-      await chrome.tabs.remove(tab.id);
-      delete tabOpenedAt[key];
-      delete warnedTabs[key];
-      changedOpen = true;
-      changedWarned = true;
     }
   }
 
@@ -121,7 +136,9 @@ export async function evaluateTabs() {
   }
 
   await updateBadge(warningCount, soonestCloseMs);
-  await notifyOldTabs(newWarnings);
+  if (notifyWarnings) {
+    await notifyOldTabs(newWarnings);
+  }
 
   const updates = {};
   if (changedOpen) updates[STORAGE_KEYS.tabOpenedAt] = tabOpenedAt;
@@ -135,4 +152,12 @@ export async function evaluateTabs() {
   if (activeTab?.id) {
     await updateActiveTabIndicator(activeTab.id);
   }
+
+  return {
+    warningCount,
+    soonestCloseMs,
+    newWarnings,
+    warnedOpenTabs,
+    autoClosedTabs,
+  };
 }

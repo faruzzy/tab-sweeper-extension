@@ -4,10 +4,14 @@ import { shouldTrackTab, matchesDomainList } from "./bg/utils.js";
 import {
   clearTabWarningNotifications,
   focusTabById,
+  notifyWakeAutoClosedSummary,
+  notifyWakeWarningSummary,
   updateActiveTabIndicator,
   updateBadge,
 } from "./bg/notifications.js";
 import { bootstrapExistingTabs, evaluateTabs } from "./bg/tabs.js";
+
+const WAKE_CATCH_UP_MIN_AWAY_MS = 5 * 60 * 1000;
 
 async function scheduleAlarm() {
   const settings = await getSettings();
@@ -195,6 +199,8 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 let badgeTickInterval = null;
 let activePorts = 0;
+let lastIdleState = "active";
+let awaySinceMs = null;
 
 function startBadgeTick() {
   if (badgeTickInterval) return;
@@ -247,10 +253,31 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 chrome.idle.onStateChanged.addListener(async (newState) => {
+  if (newState === "idle" || newState === "locked") {
+    if (awaySinceMs === null) {
+      awaySinceMs = Date.now();
+    }
+    lastIdleState = newState;
+    return;
+  }
+
   if (newState === "active") {
     const settings = await getSettings();
     if (!settings.setupComplete) return;
-    await evaluateTabs();
+
+    const wasAway = lastIdleState === "idle" || lastIdleState === "locked";
+    const awayMs = awaySinceMs === null ? 0 : Date.now() - awaySinceMs;
+    const shouldSendCatchUp = wasAway && awayMs >= WAKE_CATCH_UP_MIN_AWAY_MS;
+
+    const sweep = await evaluateTabs({ notifyWarnings: !shouldSendCatchUp });
+
+    if (shouldSendCatchUp) {
+      await notifyWakeWarningSummary(sweep.warnedOpenTabs);
+      await notifyWakeAutoClosedSummary(sweep.autoClosedTabs);
+    }
+
+    awaySinceMs = null;
+    lastIdleState = "active";
     const soonestCloseMs = await refreshBadgeCountdown();
     await manageCountdownAlarm(soonestCloseMs);
   }
