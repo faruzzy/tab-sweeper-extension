@@ -30,6 +30,20 @@ export async function updateActiveTabIndicator(tabId) {
   await chrome.action.setBadgeBackgroundColor({ color, tabId });
 }
 
+export async function clearTabWarningNotifications(tabId) {
+  if (!Number.isInteger(tabId)) return;
+
+  const notifications = await chrome.notifications.getAll();
+  const oldTabPrefix = `old-tab-${tabId}-`;
+  const batchPrefix = `old-tabs-batch-${tabId}-`;
+
+  await Promise.all(
+    Object.keys(notifications)
+      .filter((id) => id.startsWith(oldTabPrefix) || id.startsWith(batchPrefix))
+      .map((id) => chrome.notifications.clear(id))
+  );
+}
+
 export async function focusTabById(tabId) {
   if (!Number.isInteger(tabId)) return;
 

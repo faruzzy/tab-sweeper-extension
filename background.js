@@ -1,7 +1,12 @@
 import { STORAGE_KEYS, getStorage, setStorage } from "./bg/storage.js";
 import { getSettings } from "./bg/settings.js";
 import { shouldTrackTab, matchesDomainList } from "./bg/utils.js";
-import { focusTabById, updateActiveTabIndicator, updateBadge } from "./bg/notifications.js";
+import {
+  clearTabWarningNotifications,
+  focusTabById,
+  updateActiveTabIndicator,
+  updateBadge,
+} from "./bg/notifications.js";
 import { bootstrapExistingTabs, evaluateTabs } from "./bg/tabs.js";
 
 async function scheduleAlarm() {
@@ -121,11 +126,37 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (!shouldTrackTab(tab)) return;
 
-  const data = await getStorage(STORAGE_KEYS.tabOpenedAt);
+  const hasMeaningfulNavigation = typeof changeInfo.url === "string" && changeInfo.url.length > 0;
+  const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]);
   const tabOpenedAt = data.tabOpenedAt || {};
-  if (!tabOpenedAt[String(tabId)]) {
-    tabOpenedAt[String(tabId)] = Date.now();
-    await setStorage({ [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt });
+  const warnedTabs = data.warnedTabs || {};
+  const key = String(tabId);
+
+  let changedOpen = false;
+  let changedWarned = false;
+
+  if (!tabOpenedAt[key] || hasMeaningfulNavigation) {
+    tabOpenedAt[key] = Date.now();
+    changedOpen = true;
+  }
+
+  if (hasMeaningfulNavigation && warnedTabs[key]) {
+    delete warnedTabs[key];
+    changedWarned = true;
+  }
+
+  if (changedOpen || changedWarned) {
+    const updates = {};
+    if (changedOpen) updates[STORAGE_KEYS.tabOpenedAt] = tabOpenedAt;
+    if (changedWarned) updates[STORAGE_KEYS.warnedTabs] = warnedTabs;
+    await setStorage(updates);
+
+    if (changedWarned) {
+      await clearTabWarningNotifications(tabId);
+    }
+
+    const soonestCloseMs = await refreshBadgeCountdown();
+    await manageCountdownAlarm(soonestCloseMs);
   }
 });
 
