@@ -53,11 +53,13 @@ export async function evaluateTabs(options = {}) {
   let changedOpen = false;
   let changedWarned = false;
   let soonestCloseMs = null;
+  let soonestEventMs = null;
 
   const liveTabIds = new Set();
   const newWarnings = [];
   const warnedOpenTabs = [];
   const autoClosedTabs = [];
+  const previouslyWarned = new Set(Object.keys(warnedTabs));
 
   for (const tab of tabs) {
     if (!tab.id || !shouldTrackTab(tab)) continue;
@@ -75,7 +77,7 @@ export async function evaluateTabs(options = {}) {
 
     const isException = matchesDomainList(tab.url, exceptionDomains);
 
-    if (ageMs >= closeMs && !isException) {
+    if (ageMs >= closeMs && !isException && previouslyWarned.has(key)) {
       const entry = {
         id: crypto.randomUUID(),
         url: tab.url,
@@ -101,11 +103,6 @@ export async function evaluateTabs(options = {}) {
     }
 
     if (ageMs >= warningMs) {
-      if (!isException) {
-        warningCount += 1;
-        warnedOpenTabs.push({ tab, minutesOpen: ageMs / (1000 * 60) });
-      }
-
       if (!warnedTabs[key]) {
         warnedTabs[key] = now;
         changedWarned = true;
@@ -113,10 +110,20 @@ export async function evaluateTabs(options = {}) {
       }
 
       if (!isException) {
+        warningCount += 1;
+        warnedOpenTabs.push({ tab, minutesOpen: ageMs / (1000 * 60) });
+
         const remaining = closeMs - ageMs;
-        if (remaining > 0 && (soonestCloseMs === null || remaining < soonestCloseMs)) {
+        if (remaining <= 0) {
+          soonestCloseMs = 0;
+        } else if (soonestCloseMs === null || remaining < soonestCloseMs) {
           soonestCloseMs = remaining;
         }
+      }
+    } else if (!isException) {
+      const untilWarning = warningMs - ageMs;
+      if (untilWarning > 0 && (soonestEventMs === null || untilWarning < soonestEventMs)) {
+        soonestEventMs = untilWarning;
       }
     }
   }
@@ -153,9 +160,14 @@ export async function evaluateTabs(options = {}) {
     await updateActiveTabIndicator(activeTab.id);
   }
 
+  if (soonestCloseMs !== null && (soonestEventMs === null || soonestCloseMs < soonestEventMs)) {
+    soonestEventMs = soonestCloseMs;
+  }
+
   return {
     warningCount,
     soonestCloseMs,
+    soonestEventMs,
     newWarnings,
     warnedOpenTabs,
     autoClosedTabs,

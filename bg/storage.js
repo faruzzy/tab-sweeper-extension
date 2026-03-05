@@ -1,6 +1,11 @@
-export function computeSweepInterval(closeMinutes) {
-  const raw = Math.floor((closeMinutes * 60) / 20);
-  return Math.max(30, Math.min(300, raw));
+export function computeSweepInterval(closeMinutes, warningMinutes) {
+  const fromClose = Math.floor((closeMinutes * 60) / 20);
+  if (typeof warningMinutes === "number" && warningMinutes > 0 && warningMinutes < closeMinutes) {
+    const windowSec = (closeMinutes - warningMinutes) * 60;
+    const fromWindow = Math.floor(windowSec / 3);
+    return Math.max(30, Math.min(300, Math.min(fromClose, fromWindow)));
+  }
+  return Math.max(30, Math.min(300, fromClose));
 }
 
 export const DEFAULT_SETTINGS = {

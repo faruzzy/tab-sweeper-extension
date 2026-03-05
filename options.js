@@ -60,9 +60,14 @@ function minutesToDuration(totalMinutes) {
   return { days, hours, minutes };
 }
 
-function computeSweepInterval(closeMinutes) {
-  const raw = Math.floor((closeMinutes * 60) / 20);
-  return Math.max(30, Math.min(300, raw));
+function computeSweepInterval(closeMinutes, warningMinutes) {
+  const fromClose = Math.floor((closeMinutes * 60) / 20);
+  if (typeof warningMinutes === "number" && warningMinutes > 0 && warningMinutes < closeMinutes) {
+    const windowSec = (closeMinutes - warningMinutes) * 60;
+    const fromWindow = Math.floor(windowSec / 3);
+    return Math.max(30, Math.min(300, Math.min(fromClose, fromWindow)));
+  }
+  return Math.max(30, Math.min(300, fromClose));
 }
 
 function normalizeSettings(rawSettings = {}) {
@@ -105,7 +110,7 @@ function normalizeSettings(rawSettings = {}) {
     closeMinutes: normalizedCloseMinutes,
     warningDuration: minutesToDuration(normalizedWarningMinutes),
     closeDuration: minutesToDuration(normalizedCloseMinutes),
-    sweepSeconds: computeSweepInterval(normalizedCloseMinutes),
+    sweepSeconds: computeSweepInterval(normalizedCloseMinutes, normalizedWarningMinutes),
     exceptionDomains: exceptionDomains.map(normalizeDomain).filter(Boolean),
     setupComplete: rawSettings.setupComplete === true,
   };
@@ -126,14 +131,21 @@ function setDurationInputs(daysEl, hoursEl, minutesEl, duration) {
 }
 
 function updateSweepDisplay() {
+  const warningDuration = readDurationInputs(
+    warningDaysEl,
+    warningHoursEl,
+    warningMinutesEl,
+    DEFAULT_SETTINGS.warningMinutes,
+  );
   const closeDuration = readDurationInputs(
     closeDaysEl,
     closeHoursEl,
     closeMinutesEl,
     DEFAULT_SETTINGS.closeMinutes,
   );
+  const warnMin = durationToMinutes(warningDuration);
   const closeMin = durationToMinutes(closeDuration);
-  sweepDisplayEl.textContent = String(computeSweepInterval(closeMin));
+  sweepDisplayEl.textContent = String(computeSweepInterval(closeMin, warnMin));
 }
 
 function renderDomains() {
@@ -211,14 +223,15 @@ async function saveSettings() {
     DEFAULT_SETTINGS.closeMinutes,
   );
 
+  const warningMinutes = durationToMinutes(warningDuration);
   const closeMinutes = durationToMinutes(closeDuration);
 
   const settings = {
     warningDuration,
     closeDuration,
-    warningMinutes: durationToMinutes(warningDuration),
+    warningMinutes,
     closeMinutes,
-    sweepSeconds: computeSweepInterval(closeMinutes),
+    sweepSeconds: computeSweepInterval(closeMinutes, warningMinutes),
     exceptionDomains: [
       ...new Set(exceptionDomains.map(normalizeDomain).filter(Boolean)),
     ],
@@ -278,6 +291,9 @@ sweepButton.addEventListener("click", async () => {
   }
 });
 
+warningDaysEl.addEventListener("input", updateSweepDisplay);
+warningHoursEl.addEventListener("input", updateSweepDisplay);
+warningMinutesEl.addEventListener("input", updateSweepDisplay);
 closeDaysEl.addEventListener("input", updateSweepDisplay);
 closeHoursEl.addEventListener("input", updateSweepDisplay);
 closeMinutesEl.addEventListener("input", updateSweepDisplay);

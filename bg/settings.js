@@ -46,7 +46,7 @@ function normalizeSettings(rawSettings = {}) {
     closeMinutes: normalizedCloseMinutes,
     warningDuration: minutesToDuration(normalizedWarningMinutes),
     closeDuration: minutesToDuration(normalizedCloseMinutes),
-    sweepSeconds: computeSweepInterval(normalizedCloseMinutes),
+    sweepSeconds: computeSweepInterval(normalizedCloseMinutes, normalizedWarningMinutes),
     exceptionDomains,
     setupComplete,
   };

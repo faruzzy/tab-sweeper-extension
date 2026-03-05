@@ -50,7 +50,9 @@ async function refreshBadgeCountdown() {
     if (!openedAt) continue;
 
     const remaining = closeMs - (now - openedAt);
-    if (remaining > 0 && (soonestCloseMs === null || remaining < soonestCloseMs)) {
+    if (remaining <= 0) {
+      soonestCloseMs = 0;
+    } else if (soonestCloseMs === null || remaining < soonestCloseMs) {
       soonestCloseMs = remaining;
     }
   }
@@ -67,6 +69,14 @@ async function manageCountdownAlarm(soonestCloseMs) {
     await chrome.alarms.create("tab-sweeper-countdown", { periodInMinutes: 0.5 });
   } else if (!inCountdownZone && existing) {
     await chrome.alarms.clear("tab-sweeper-countdown");
+  }
+}
+
+async function scheduleNextEventAlarm(soonestEventMs) {
+  await chrome.alarms.clear("tab-sweeper-next-event");
+  if (typeof soonestEventMs === "number" && soonestEventMs > 0) {
+    const delayMinutes = Math.max(0.5, soonestEventMs / 60000);
+    await chrome.alarms.create("tab-sweeper-next-event", { delayInMinutes: delayMinutes });
   }
 }
 
@@ -90,9 +100,10 @@ async function initializeState() {
 
   await bootstrapExistingTabs();
   await scheduleAlarm();
-  await evaluateTabs();
+  const sweep = await evaluateTabs();
   const soonestCloseMs = await refreshBadgeCountdown();
   await manageCountdownAlarm(soonestCloseMs);
+  await scheduleNextEventAlarm(sweep.soonestEventMs);
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -206,10 +217,11 @@ function startBadgeTick() {
   if (badgeTickInterval) return;
   badgeTickInterval = setInterval(async () => {
     const soonestCloseMs = await refreshBadgeCountdown();
-    if (soonestCloseMs !== null && soonestCloseMs <= 0) {
-      await evaluateTabs();
+    if (typeof soonestCloseMs === "number" && soonestCloseMs <= 0) {
+      const sweep = await evaluateTabs();
       const updated = await refreshBadgeCountdown();
       await manageCountdownAlarm(updated);
+      await scheduleNextEventAlarm(sweep.soonestEventMs);
     }
   }, 1000);
 }
@@ -239,17 +251,22 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "tab-sweeper-countdown") {
     const soonestCloseMs = await refreshBadgeCountdown();
     if (soonestCloseMs !== null && soonestCloseMs <= 0) {
-      await evaluateTabs();
+      const sweep = await evaluateTabs();
+      const updated = await refreshBadgeCountdown();
+      await manageCountdownAlarm(updated);
+      await scheduleNextEventAlarm(sweep.soonestEventMs);
+    } else {
+      await manageCountdownAlarm(soonestCloseMs);
     }
-    await manageCountdownAlarm(await refreshBadgeCountdown());
     return;
   }
-  if (alarm.name !== "tab-sweeper-check") return;
+  if (alarm.name !== "tab-sweeper-check" && alarm.name !== "tab-sweeper-next-event") return;
   const settings = await getSettings();
   if (!settings.setupComplete) return;
-  await evaluateTabs();
+  const sweep = await evaluateTabs();
   const soonestCloseMs = await refreshBadgeCountdown();
   await manageCountdownAlarm(soonestCloseMs);
+  await scheduleNextEventAlarm(sweep.soonestEventMs);
 });
 
 chrome.idle.onStateChanged.addListener(async (newState) => {
@@ -280,28 +297,33 @@ chrome.idle.onStateChanged.addListener(async (newState) => {
     lastIdleState = "active";
     const soonestCloseMs = await refreshBadgeCountdown();
     await manageCountdownAlarm(soonestCloseMs);
+    await scheduleNextEventAlarm(sweep.soonestEventMs);
   }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "runSweepNow") {
+    let sweep;
     getSettings()
       .then((settings) => {
         if (!settings.setupComplete) throw new Error("Setup not completed yet.");
         return evaluateTabs();
       })
-      .then(() => refreshBadgeCountdown())
+      .then((s) => { sweep = s; return refreshBadgeCountdown(); })
       .then((ms) => manageCountdownAlarm(ms))
+      .then(() => scheduleNextEventAlarm(sweep?.soonestEventMs))
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
 
   if (message?.type === "settingsUpdated") {
+    let sweep;
     scheduleAlarm()
       .then(() => evaluateTabs())
-      .then(() => refreshBadgeCountdown())
+      .then((s) => { sweep = s; return refreshBadgeCountdown(); })
       .then((ms) => manageCountdownAlarm(ms))
+      .then(() => scheduleNextEventAlarm(sweep?.soonestEventMs))
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
