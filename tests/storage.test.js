@@ -26,6 +26,35 @@ describe("computeSweepInterval", () => {
     expect(sweepsPerPeriod).toBeGreaterThanOrEqual(10);
     expect(sweepsPerPeriod).toBeLessThanOrEqual(30);
   });
+
+  it("uses warning-to-close window when warningMinutes is provided", () => {
+    // close=10min, warn=9min → window=1min=60s → fromWindow=60/3=20 → clamped to 30
+    expect(computeSweepInterval(10, 9)).toBe(30);
+    // close=10min, warn=5min → window=5min=300s → fromWindow=300/3=100
+    // fromClose=10*60/20=30 → min(30, 100) = 30
+    expect(computeSweepInterval(10, 5)).toBe(30);
+  });
+
+  it("picks the smaller of fromClose and fromWindow", () => {
+    // close=60min, warn=59min → window=1min=60s → fromWindow=20 → clamped to 30
+    // fromClose=60*60/20=180 → min(180, 30) = 30
+    expect(computeSweepInterval(60, 59)).toBe(30);
+    // close=60min, warn=30min → window=30min=1800s → fromWindow=600 → capped at 300
+    // fromClose=180 → min(180, 300) = 180
+    expect(computeSweepInterval(60, 30)).toBe(180);
+  });
+
+  it("ignores warningMinutes when not provided or invalid", () => {
+    expect(computeSweepInterval(30)).toBe(90);
+    expect(computeSweepInterval(30, undefined)).toBe(90);
+    expect(computeSweepInterval(30, 0)).toBe(90);
+    expect(computeSweepInterval(30, -5)).toBe(90);
+  });
+
+  it("ignores warningMinutes when >= closeMinutes", () => {
+    expect(computeSweepInterval(30, 30)).toBe(90);
+    expect(computeSweepInterval(30, 60)).toBe(90);
+  });
 });
 
 describe("DEFAULT_SETTINGS", () => {

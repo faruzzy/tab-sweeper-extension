@@ -1,11 +1,5 @@
 import { getTabLabel, matchesDomainList } from "./bg/utils.js";
 
-try {
-  chrome.runtime.connect({ name: "keepalive" });
-} catch {
-  // Service worker may not be ready yet.
-}
-
 const summaryEl = document.getElementById("summary");
 const statusEl = document.getElementById("status");
 const sweepNow = document.getElementById("sweepNow");

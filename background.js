@@ -27,6 +27,7 @@ async function refreshBadgeCountdown() {
     chrome.tabs.query({}),
   ]);
 
+  const warningMs = settings.warningMinutes * 60 * 1000;
   const closeMs = settings.closeMinutes * 60 * 1000;
   const exceptionDomains = Array.isArray(settings.exceptionDomains) ? settings.exceptionDomains : [];
   const tabOpenedAt = storage.tabOpenedAt || {};
@@ -35,30 +36,40 @@ async function refreshBadgeCountdown() {
 
   let warningCount = 0;
   let soonestCloseMs = null;
+  let soonestWarningMs = null;
 
   for (const tab of tabs) {
     if (!tab.id || !shouldTrackTab(tab)) continue;
     const key = String(tab.id);
-    if (!warnedTabs[key]) continue;
 
     const isException = matchesDomainList(tab.url, exceptionDomains);
     if (isException) continue;
 
-    warningCount += 1;
-
     const openedAt = tabOpenedAt[key];
     if (!openedAt) continue;
 
-    const remaining = closeMs - (now - openedAt);
-    if (remaining <= 0) {
-      soonestCloseMs = 0;
-    } else if (soonestCloseMs === null || remaining < soonestCloseMs) {
-      soonestCloseMs = remaining;
+    const ageMs = now - openedAt;
+
+    if (warnedTabs[key]) {
+      warningCount += 1;
+      const remaining = closeMs - ageMs;
+      if (remaining <= 0) {
+        soonestCloseMs = 0;
+      } else if (soonestCloseMs === null || remaining < soonestCloseMs) {
+        soonestCloseMs = remaining;
+      }
+    } else {
+      const untilWarning = warningMs - ageMs;
+      if (untilWarning <= 0) {
+        soonestWarningMs = 0;
+      } else if (soonestWarningMs === null || untilWarning < soonestWarningMs) {
+        soonestWarningMs = untilWarning;
+      }
     }
   }
 
   await updateBadge(warningCount, soonestCloseMs);
-  return soonestCloseMs;
+  return { warningCount, soonestCloseMs, soonestWarningMs };
 }
 
 async function manageCountdownAlarm(soonestCloseMs) {
@@ -101,9 +112,10 @@ async function initializeState() {
   await bootstrapExistingTabs();
   await scheduleAlarm();
   const sweep = await evaluateTabs();
-  const soonestCloseMs = await refreshBadgeCountdown();
-  await manageCountdownAlarm(soonestCloseMs);
+  const badge = await refreshBadgeCountdown();
+  await manageCountdownAlarm(badge.soonestCloseMs);
   await scheduleNextEventAlarm(sweep.soonestEventMs);
+  await syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs);
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -170,7 +182,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       await clearTabWarningNotifications(tabId);
     }
 
-    const soonestCloseMs = await refreshBadgeCountdown();
+    const { soonestCloseMs } = await refreshBadgeCountdown();
     await manageCountdownAlarm(soonestCloseMs);
   }
 });
@@ -198,65 +210,69 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt,
       [STORAGE_KEYS.warnedTabs]: warnedTabs,
     });
-    const soonestCloseMs = await refreshBadgeCountdown();
-    await manageCountdownAlarm(soonestCloseMs);
+    const badge = await refreshBadgeCountdown();
+    await manageCountdownAlarm(badge.soonestCloseMs);
+    await syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs);
   }
 });
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await updateActiveTabIndicator(activeInfo.tabId);
-  await refreshBadgeCountdown();
+  const badge = await refreshBadgeCountdown();
+  await syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs);
 });
 
-let badgeTickInterval = null;
-let activePorts = 0;
+let offscreenCreated = false;
 let lastIdleState = "active";
 let awaySinceMs = null;
 
-function startBadgeTick() {
-  if (badgeTickInterval) return;
-  badgeTickInterval = setInterval(async () => {
-    const soonestCloseMs = await refreshBadgeCountdown();
-    if (typeof soonestCloseMs === "number" && soonestCloseMs <= 0) {
-      const sweep = await evaluateTabs();
-      const updated = await refreshBadgeCountdown();
-      await manageCountdownAlarm(updated);
-      await scheduleNextEventAlarm(sweep.soonestEventMs);
-    }
-  }, 1000);
-}
-
-function stopBadgeTick() {
-  if (badgeTickInterval) {
-    clearInterval(badgeTickInterval);
-    badgeTickInterval = null;
+async function ensureOffscreen() {
+  if (offscreenCreated) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["WORKERS"],
+      justification: "Per-second badge countdown tick",
+    });
+    offscreenCreated = true;
+  } catch {
+    // Document may already exist (e.g. after service worker restart).
+    offscreenCreated = true;
   }
 }
 
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== "keepalive") return;
-  activePorts += 1;
-  startBadgeTick();
+async function closeOffscreen() {
+  if (!offscreenCreated) return;
+  try {
+    await chrome.offscreen.closeDocument();
+  } catch {
+    // Already closed.
+  }
+  offscreenCreated = false;
+}
 
-  port.onDisconnect.addListener(() => {
-    activePorts -= 1;
-    if (activePorts <= 0) {
-      activePorts = 0;
-      stopBadgeTick();
-    }
-  });
-});
+async function syncOffscreenLifecycle(warningCount, soonestWarningMs) {
+  const hasWarnings = warningCount > 0;
+  const warningImminent = typeof soonestWarningMs === "number" && soonestWarningMs <= 60000;
+  if (hasWarnings || warningImminent) {
+    await ensureOffscreen();
+  } else {
+    await closeOffscreen();
+  }
+}
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "tab-sweeper-countdown") {
-    const soonestCloseMs = await refreshBadgeCountdown();
-    if (soonestCloseMs !== null && soonestCloseMs <= 0) {
+    const badge = await refreshBadgeCountdown();
+    if (badge.soonestCloseMs !== null && badge.soonestCloseMs <= 0) {
       const sweep = await evaluateTabs();
       const updated = await refreshBadgeCountdown();
-      await manageCountdownAlarm(updated);
+      await manageCountdownAlarm(updated.soonestCloseMs);
       await scheduleNextEventAlarm(sweep.soonestEventMs);
+      await syncOffscreenLifecycle(updated.warningCount, updated.soonestWarningMs);
     } else {
-      await manageCountdownAlarm(soonestCloseMs);
+      await manageCountdownAlarm(badge.soonestCloseMs);
+      await syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs);
     }
     return;
   }
@@ -264,9 +280,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const settings = await getSettings();
   if (!settings.setupComplete) return;
   const sweep = await evaluateTabs();
-  const soonestCloseMs = await refreshBadgeCountdown();
-  await manageCountdownAlarm(soonestCloseMs);
+  const alarmBadge = await refreshBadgeCountdown();
+  await manageCountdownAlarm(alarmBadge.soonestCloseMs);
   await scheduleNextEventAlarm(sweep.soonestEventMs);
+  await syncOffscreenLifecycle(alarmBadge.warningCount, alarmBadge.soonestWarningMs);
 });
 
 chrome.idle.onStateChanged.addListener(async (newState) => {
@@ -295,13 +312,33 @@ chrome.idle.onStateChanged.addListener(async (newState) => {
 
     awaySinceMs = null;
     lastIdleState = "active";
-    const soonestCloseMs = await refreshBadgeCountdown();
-    await manageCountdownAlarm(soonestCloseMs);
+    const idleBadge = await refreshBadgeCountdown();
+    await manageCountdownAlarm(idleBadge.soonestCloseMs);
     await scheduleNextEventAlarm(sweep.soonestEventMs);
+    await syncOffscreenLifecycle(idleBadge.warningCount, idleBadge.soonestWarningMs);
   }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "offscreenTick") {
+    (async () => {
+      const badge = await refreshBadgeCountdown();
+      const needsEval =
+        (typeof badge.soonestCloseMs === "number" && badge.soonestCloseMs <= 0) ||
+        (typeof badge.soonestWarningMs === "number" && badge.soonestWarningMs <= 0);
+      if (needsEval) {
+        const sweep = await evaluateTabs();
+        const updated = await refreshBadgeCountdown();
+        await manageCountdownAlarm(updated.soonestCloseMs);
+        await scheduleNextEventAlarm(sweep.soonestEventMs);
+        await syncOffscreenLifecycle(updated.warningCount, updated.soonestWarningMs);
+      } else {
+        await syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs);
+      }
+    })();
+    return false;
+  }
+
   if (message?.type === "runSweepNow") {
     let sweep;
     getSettings()
@@ -310,7 +347,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return evaluateTabs();
       })
       .then((s) => { sweep = s; return refreshBadgeCountdown(); })
-      .then((ms) => manageCountdownAlarm(ms))
+      .then((badge) => {
+        return manageCountdownAlarm(badge.soonestCloseMs)
+          .then(() => syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs));
+      })
       .then(() => scheduleNextEventAlarm(sweep?.soonestEventMs))
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
@@ -322,7 +362,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     scheduleAlarm()
       .then(() => evaluateTabs())
       .then((s) => { sweep = s; return refreshBadgeCountdown(); })
-      .then((ms) => manageCountdownAlarm(ms))
+      .then((badge) => {
+        return manageCountdownAlarm(badge.soonestCloseMs)
+          .then(() => syncOffscreenLifecycle(badge.warningCount, badge.soonestWarningMs));
+      })
       .then(() => scheduleNextEventAlarm(sweep?.soonestEventMs))
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));

@@ -17,6 +17,7 @@ const closeHoursEl = document.getElementById("closeHours");
 const closeMinutesEl = document.getElementById("closeMinutes");
 
 const sweepDisplayEl = document.getElementById("sweepDisplay");
+const timingErrorEl = document.getElementById("timingError");
 const domainForm = document.getElementById("domainForm");
 const domainInput = document.getElementById("domainInput");
 const domainList = document.getElementById("domainList");
@@ -145,6 +146,11 @@ function updateSweepDisplay() {
   );
   const warnMin = durationToMinutes(warningDuration);
   const closeMin = durationToMinutes(closeDuration);
+
+  const timingValid = warnMin < closeMin;
+  timingErrorEl.style.display = timingValid ? "none" : "block";
+  saveButton.disabled = !timingValid;
+
   sweepDisplayEl.textContent = String(computeSweepInterval(closeMin, warnMin));
 }
 
@@ -225,6 +231,11 @@ async function saveSettings() {
 
   const warningMinutes = durationToMinutes(warningDuration);
   const closeMinutes = durationToMinutes(closeDuration);
+
+  if (warningMinutes >= closeMinutes) {
+    showStatus("Warning time must be less than auto-close time.", true);
+    return;
+  }
 
   const settings = {
     warningDuration,

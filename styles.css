@@ -97,6 +97,11 @@ a:hover {
   background: var(--primary-hover);
 }
 
+button:disabled {
+  background: #a0a8b8;
+  cursor: not-allowed;
+}
+
 button.secondary {
   background: #5c6477;
 }
