@@ -48,7 +48,7 @@ if (!globalThis.crypto?.randomUUID) {
 }
 
 // Import AFTER mocks are in place
-const { evaluateTabs } = await import("../bg/tabs.js");
+const { bootstrapExistingTabs, evaluateTabs } = await import("../bg/tabs.js");
 
 function makeTab(id, url = "https://example.com", title = "Example") {
   return { id, url, title, groupId: -1 };
@@ -230,5 +230,24 @@ describe("evaluateTabs", () => {
 
     expect(store.tabOpenedAt["999"]).toBeUndefined();
     expect(store.warnedTabs["999"]).toBeUndefined();
+  });
+
+  it("remaps restored tabs to new tab ids without resetting timers", async () => {
+    const now = Date.now();
+    const openedAt = now - 75_000;
+    const warnedAt = now - 10_000;
+    store.tabOpenedAt = { "7": openedAt };
+    store.tabMetadata = { "7": { url: "https://example.com/restored", title: "Restored" } };
+    store.warnedTabs = { "7": warnedAt };
+
+    chrome.tabs.query.mockResolvedValue([makeTab(42, "https://example.com/restored", "Restored")]);
+
+    await bootstrapExistingTabs();
+
+    expect(store.tabOpenedAt).toEqual({ "42": openedAt });
+    expect(store.warnedTabs).toEqual({ "42": warnedAt });
+    expect(store.tabMetadata).toEqual({
+      "42": { url: "https://example.com/restored", title: "Restored" },
+    });
   });
 });

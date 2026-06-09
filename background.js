@@ -9,7 +9,7 @@ import {
   updateActiveTabIndicator,
   updateBadge,
 } from "./bg/notifications.js";
-import { bootstrapExistingTabs, evaluateTabs } from "./bg/tabs.js";
+import { bootstrapExistingTabs, evaluateTabs, getTabMetadata } from "./bg/tabs.js";
 
 const WAKE_CATCH_UP_MIN_AWAY_MS = 5 * 60 * 1000;
 
@@ -92,10 +92,18 @@ async function scheduleNextEventAlarm(soonestEventMs) {
 }
 
 async function initializeStorage() {
-  const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]);
+  const data = await getStorage([
+    STORAGE_KEYS.tabOpenedAt,
+    STORAGE_KEYS.tabMetadata,
+    STORAGE_KEYS.warnedTabs,
+  ]);
 
   if (!data.tabOpenedAt) {
     await setStorage({ [STORAGE_KEYS.tabOpenedAt]: {} });
+  }
+
+  if (!data.tabMetadata) {
+    await setStorage({ [STORAGE_KEYS.tabMetadata]: {} });
   }
 
   if (!data.warnedTabs) {
@@ -144,22 +152,33 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.tabs.onCreated.addListener(async (tab) => {
   if (!tab.id || !shouldTrackTab(tab)) return;
 
-  const data = await getStorage(STORAGE_KEYS.tabOpenedAt);
+  const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.tabMetadata]);
   const tabOpenedAt = data.tabOpenedAt || {};
+  const tabMetadata = data.tabMetadata || {};
   tabOpenedAt[String(tab.id)] = Date.now();
-  await setStorage({ [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt });
+  tabMetadata[String(tab.id)] = getTabMetadata(tab);
+  await setStorage({
+    [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt,
+    [STORAGE_KEYS.tabMetadata]: tabMetadata,
+  });
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (!shouldTrackTab(tab)) return;
 
   const hasMeaningfulNavigation = typeof changeInfo.url === "string" && changeInfo.url.length > 0;
-  const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]);
+  const data = await getStorage([
+    STORAGE_KEYS.tabOpenedAt,
+    STORAGE_KEYS.tabMetadata,
+    STORAGE_KEYS.warnedTabs,
+  ]);
   const tabOpenedAt = data.tabOpenedAt || {};
+  const tabMetadata = data.tabMetadata || {};
   const warnedTabs = data.warnedTabs || {};
   const key = String(tabId);
 
   let changedOpen = false;
+  let changedMetadata = false;
   let changedWarned = false;
 
   if (!tabOpenedAt[key] || hasMeaningfulNavigation) {
@@ -167,14 +186,20 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     changedOpen = true;
   }
 
+  if (!tabMetadata[key] || hasMeaningfulNavigation) {
+    tabMetadata[key] = getTabMetadata(tab);
+    changedMetadata = true;
+  }
+
   if (hasMeaningfulNavigation && warnedTabs[key]) {
     delete warnedTabs[key];
     changedWarned = true;
   }
 
-  if (changedOpen || changedWarned) {
+  if (changedOpen || changedMetadata || changedWarned) {
     const updates = {};
     if (changedOpen) updates[STORAGE_KEYS.tabOpenedAt] = tabOpenedAt;
+    if (changedMetadata) updates[STORAGE_KEYS.tabMetadata] = tabMetadata;
     if (changedWarned) updates[STORAGE_KEYS.warnedTabs] = warnedTabs;
     await setStorage(updates);
 
@@ -188,8 +213,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const data = await getStorage([STORAGE_KEYS.tabOpenedAt, STORAGE_KEYS.warnedTabs]);
+  const data = await getStorage([
+    STORAGE_KEYS.tabOpenedAt,
+    STORAGE_KEYS.tabMetadata,
+    STORAGE_KEYS.warnedTabs,
+  ]);
   const tabOpenedAt = data.tabOpenedAt || {};
+  const tabMetadata = data.tabMetadata || {};
   const warnedTabs = data.warnedTabs || {};
 
   const key = String(tabId);
@@ -197,6 +227,11 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
   if (tabOpenedAt[key]) {
     delete tabOpenedAt[key];
+    changed = true;
+  }
+
+  if (tabMetadata[key]) {
+    delete tabMetadata[key];
     changed = true;
   }
 
@@ -208,6 +243,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (changed) {
     await setStorage({
       [STORAGE_KEYS.tabOpenedAt]: tabOpenedAt,
+      [STORAGE_KEYS.tabMetadata]: tabMetadata,
       [STORAGE_KEYS.warnedTabs]: warnedTabs,
     });
     const badge = await refreshBadgeCountdown();

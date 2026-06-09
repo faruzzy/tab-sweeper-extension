@@ -36,5 +36,5 @@ A Manifest V3 extension to help reduce tab overload.
 
 ## Notes
 - Data is stored in `chrome.storage.local`.
-- Existing tabs are tracked from the time the extension starts.
+- Existing tabs are tracked from the time the extension starts, and restored tabs keep their timers across browser restarts after metadata has been saved.
 - Only `http` and `https` tabs are tracked.

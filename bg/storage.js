@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS = {
 export const STORAGE_KEYS = {
   settings: "settings",
   tabOpenedAt: "tabOpenedAt",
+  tabMetadata: "tabMetadata",
   warnedTabs: "warnedTabs",
   savedTabs: "savedTabs",
 };
